@@ -1,0 +1,32 @@
+pipeline {
+  agent any
+
+  stages {
+    stage('Build') {
+      steps {
+        sh 'make build'
+      }
+    }
+
+    stage('Verify') {
+      parallel {
+        stage('Unit') {
+          steps {
+            sh 'make test'
+          }
+        }
+        stage('Security') {
+          steps {
+            sh 'make scan'
+          }
+        }
+      }
+    }
+
+    stage('Publish') {
+      steps {
+        sh 'make publish'
+      }
+    }
+  }
+}
