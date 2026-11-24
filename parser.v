@@ -103,7 +103,7 @@ fn parse_jenkins(content string, source string) !PipelineFacts {
 				if command := extract_step_argument(line, shell) {
 					command_fact := CommandFact{
 						shell:   shell
-						command: command
+						command: sanitize_urls(command)
 						line:    line_number
 						stage:   stage_name
 					}
@@ -154,14 +154,14 @@ fn parse_jenkins(content string, source string) !PipelineFacts {
 					reason: 'dynamic Groovy requires agent review'
 					line:   line_number
 					stage:  stage_name
-					source: line
+					source: sanitize_urls(line)
 				}
 			} else if line.contains(r'${') {
 				facts.unresolved << UnresolvedFact{
 					reason: 'interpolated value requires runtime resolution'
 					line:   line_number
 					stage:  stage_name
-					source: line
+					source: sanitize_urls(line)
 				}
 			}
 			depth += brace_delta(line)
@@ -289,6 +289,33 @@ fn extract_urls(line string) []string {
 		}
 	}
 	return urls
+}
+
+fn sanitize_urls(value string) string {
+	mut result := value
+	for prefix in ['https://', 'http://'] {
+		mut offset := 0
+		for offset < result.len {
+			relative_index := result[offset..].index(prefix) or { break }
+			start := offset + relative_index
+			candidate := result[start..]
+			mut end := candidate.len
+			for position, character in candidate.bytes() {
+				if character in [`'`, `"`, ` `, `)`, `,`] {
+					end = position
+					break
+				}
+			}
+			url := candidate[..end]
+			if query_index := url.index('?') {
+				result = result[..start + query_index] + result[start + end..]
+				offset = start + query_index
+			} else {
+				offset = start + end
+			}
+		}
+	}
+	return result
 }
 
 fn strip_comment(line string) string {

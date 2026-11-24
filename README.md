@@ -33,7 +33,7 @@ The command prints one JSON document to standard output.
 
 - Stages, source lines, sequential dependencies, and parallel parents.
 - Pipeline and stage agents, labels, and container images.
-- Shell, batch, and PowerShell commands.
+- Shell, batch, and PowerShell commands with URL query parameters removed.
 - Credential references by ID, never credential values.
 - Triggers such as `cron`, `pollSCM`, and `upstream`.
 - Archived, stashed, and unstashed artifacts.

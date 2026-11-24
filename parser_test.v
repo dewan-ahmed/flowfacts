@@ -1,5 +1,7 @@
 module main
 
+import json
+
 fn test_extracts_jenkins_facts() {
 	content := $embed_file('testdata/Jenkinsfile').to_string()
 	facts := parse_jenkins(content, 'Jenkinsfile') or {
@@ -48,6 +50,24 @@ fn test_rejects_file_without_stages() {
 fn test_url_extraction_removes_query_parameters() {
 	urls := extract_urls("sh 'curl https://example.com/api?token=secret'")
 	assert urls == ['https://example.com/api']
+}
+
+fn test_redacts_url_queries_from_all_output_fields() {
+	content := 'pipeline { stages { stage(\'Publish\') { steps {
+		sh \'curl https://example.com/upload?token=hardcoded-secret\'
+		sh "curl https://example.com/runtime?token=\${UPLOAD_TOKEN}"
+	} } } }'
+	facts := parse_jenkins(content, 'Jenkinsfile') or {
+		assert false, err.msg()
+		return
+	}
+	assert facts.stages[0].commands[0].command == 'curl https://example.com/upload'
+	assert facts.stages[0].commands[1].command == 'curl https://example.com/runtime'
+	assert facts.unresolved[0].source == 'sh "curl https://example.com/runtime"'
+	output := json.encode(facts)
+	assert !output.contains('hardcoded-secret')
+	assert !output.contains('UPLOAD_TOKEN')
+	assert !output.contains('?token=')
 }
 
 fn test_extracts_one_line_blocks() {
