@@ -12,18 +12,18 @@ fn main() {
 		eprintln('flowfacts: unknown command "${os.args[1]}"')
 		exit(2)
 	}
-	path := parse_pipeline_args(os.args[2..]) or {
+	provider, path := parse_pipeline_args(os.args[2..]) or {
 		eprintln('flowfacts: ${err}')
 		exit(2)
 	}
-	facts := parse_jenkins_file(path) or {
+	facts := parse_pipeline_file(provider, path) or {
 		eprintln('flowfacts: ${err}')
 		exit(1)
 	}
 	println(json.encode(facts))
 }
 
-fn parse_pipeline_args(args []string) !string {
+fn parse_pipeline_args(args []string) !(string, string) {
 	mut path := ''
 	mut provider := 'jenkins'
 	mut index := 0
@@ -48,13 +48,20 @@ fn parse_pipeline_args(args []string) !string {
 			}
 		}
 	}
-	if provider != 'jenkins' {
+	if provider !in ['jenkins', 'harness'] {
 		return error('unsupported provider "${provider}"')
 	}
 	if path == '' {
 		return error('pipeline requires --file')
 	}
-	return path
+	return provider, path
+}
+
+fn parse_pipeline_file(provider string, path string) !PipelineFacts {
+	return match provider {
+		'harness' { parse_harness_file(path)! }
+		else { parse_jenkins_file(path)! }
+	}
 }
 
 fn print_help() {
@@ -62,4 +69,5 @@ fn print_help() {
 	println('')
 	println('Usage:')
 	println('  flowfacts pipeline --provider jenkins --file Jenkinsfile')
+	println('  flowfacts pipeline --provider harness --file pipeline.yaml')
 }

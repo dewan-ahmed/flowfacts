@@ -10,8 +10,10 @@ It extracts facts only. It does not convert pipelines or call any CI/CD service.
 
 ## Status
 
-Early development. The first provider supports common Jenkins Declarative
-Pipeline patterns.
+Early development. Two providers are available:
+
+- `jenkins`: common Jenkins Declarative Pipeline patterns.
+- `harness`: Harness pipeline YAML (CI, Deployment, and Custom stages).
 
 ## Build
 
@@ -25,6 +27,7 @@ v -prod -o flowfacts .
 
 ```sh
 flowfacts pipeline --provider jenkins --file Jenkinsfile
+flowfacts pipeline --provider harness --file pipeline.yaml
 ```
 
 The command prints one JSON document to standard output.
@@ -40,6 +43,25 @@ The command prints one JSON document to standard output.
 - External HTTP endpoints with query parameters removed.
 - Common integration steps.
 - Dynamic Groovy and interpolated values that need review.
+
+## Harness pipeline facts
+
+The `harness` provider reads a pipeline YAML file without contacting any
+service and maps it to the same fact model:
+
+- Stages with their `type`, plus sequential and parallel stage dependencies.
+- Build infrastructure, runtime, platform, and deployment environments as
+  agents.
+- Step images, `Run`, `Background`, and `ShellScript` commands.
+- Connector references as `connector:<id>` and secret references as
+  `secret:<id>`, never secret values.
+- Cache, upload, image push, and test report artifacts.
+- Step types as integrations.
+- Templates, runtime inputs, expressions, looping strategies, and conditions
+  as unresolved facts.
+
+Fact lines point to the enclosing stage or step. Triggers are stored outside
+pipeline YAML, so `triggers` is empty for this provider.
 
 Unresolved entries are deliberate. They tell an agent where deterministic
 extraction stops and human or model judgment is required.

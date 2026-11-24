@@ -35,6 +35,7 @@ struct UnresolvedFact {
 
 struct StageFact {
 	name            string
+	kind            string
 	line            int
 	depends_on      []string
 	parallel_parent string
