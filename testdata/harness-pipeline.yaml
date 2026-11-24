@@ -1,0 +1,160 @@
+pipeline:
+  name: Build and Deploy
+  identifier: build_and_deploy
+  projectIdentifier: example_project
+  orgIdentifier: default
+  properties:
+    ci:
+      codebase:
+        connectorRef: git_connector
+        repoName: example-service
+        build: <+input>
+  variables:
+    - name: registry_password
+      type: Secret
+      value: registry_password
+  stages:
+    - stage:
+        name: Build
+        identifier: build
+        type: CI
+        spec:
+          cloneCodebase: true
+          platform:
+            os: Linux
+            arch: Amd64
+          runtime:
+            type: Cloud
+            spec: {}
+          execution:
+            steps:
+              - step:
+                  type: RestoreCacheS3
+                  name: Restore cache
+                  identifier: restore_cache
+                  spec:
+                    connectorRef: aws_connector
+                    bucket: build-cache
+                    key: go-<+checksum("go.sum")>
+              - step:
+                  type: Run
+                  name: Test
+                  identifier: test
+                  spec:
+                    connectorRef: docker_hub
+                    image: golang:1.23
+                    shell: Sh
+                    command: |-
+                      go test ./...
+                      curl https://quality.example.com/api?token=hardcoded-secret
+                    reports:
+                      type: JUnit
+                      spec:
+                        paths:
+                          - reports/*.xml
+              - parallel:
+                  - step:
+                      type: Run
+                      name: Lint
+                      identifier: lint
+                      spec:
+                        image: golangci/golangci-lint:v1.61
+                        shell: Bash
+                        command: golangci-lint run
+                  - step:
+                      type: Plugin
+                      name: Scan
+                      identifier: scan
+                      spec:
+                        image: example/scanner:2
+                        settings:
+                          token: <+secrets.getValue("scanner_token")>
+              - step:
+                  type: BuildAndPushDockerRegistry
+                  name: Push image
+                  identifier: push_image
+                  spec:
+                    connectorRef: registry_connector
+                    repo: example/service
+                    tags:
+                      - <+pipeline.sequenceId>
+              - step:
+                  type: SaveCacheS3
+                  name: Save cache
+                  identifier: save_cache
+                  spec:
+                    connectorRef: aws_connector
+                    bucket: build-cache
+                    key: go-<+checksum("go.sum")>
+                    sourcePaths:
+                      - /root/go/pkg/mod
+    - parallel:
+        - stage:
+            name: Security
+            identifier: security
+            template:
+              templateRef: security_scan
+              versionLabel: v2
+        - stage:
+            name: Integration
+            identifier: integration
+            type: CI
+            spec:
+              cloneCodebase: true
+              infrastructure:
+                type: KubernetesDirect
+                spec:
+                  connectorRef: build_cluster
+                  namespace: ci
+              execution:
+                steps:
+                  - stepGroup:
+                      name: Suite
+                      identifier: suite
+                      strategy:
+                        matrix:
+                          shard:
+                            - "1"
+                            - "2"
+                      steps:
+                        - step:
+                            type: Run
+                            name: Integration tests
+                            identifier: integration_tests
+                            spec:
+                              image: golang:1.23
+                              shell: Sh
+                              command: make integration SHARD=<+matrix.shard>
+    - stage:
+        name: Deploy
+        identifier: deploy
+        type: Deployment
+        when:
+          pipelineStatus: Success
+          condition: <+pipeline.variables.deploy> == "true"
+        spec:
+          deploymentType: Kubernetes
+          service:
+            serviceRef: example_service
+          environment:
+            environmentRef: production
+            infrastructureDefinitions:
+              - identifier: production_cluster
+          execution:
+            steps:
+              - step:
+                  type: ShellScript
+                  name: Notify
+                  identifier: notify
+                  spec:
+                    shell: Bash
+                    source:
+                      type: Inline
+                      spec:
+                        script: curl -X POST https://hooks.example.com/deploy
+              - step:
+                  name: Rollout
+                  identifier: rollout
+                  template:
+                    templateRef: k8s_rollout
+                    versionLabel: "1"
