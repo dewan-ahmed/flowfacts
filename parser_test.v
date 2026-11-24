@@ -49,3 +49,21 @@ fn test_url_extraction_removes_query_parameters() {
 	urls := extract_urls("sh 'curl https://example.com/api?token=secret'")
 	assert urls == ['https://example.com/api']
 }
+
+fn test_extracts_one_line_blocks() {
+	content := $embed_file('testdata/Jenkinsfile.compact').to_string()
+	facts := parse_jenkins(content, 'Jenkinsfile.compact') or {
+		assert false, err.msg()
+		return
+	}
+	assert facts.agents == ['label:linux-large']
+	assert facts.stages[0].images == ['golang:1.23']
+	assert 'docker' in facts.integrations
+	assert facts.stages.len == 5
+	assert facts.stages[2].name == 'Unit'
+	assert facts.stages[2].parallel_parent == 'Checks'
+	assert facts.stages[2].commands[0].command == 'make test'
+	assert facts.stages[3].commands[0].command == 'make lint'
+	assert facts.stages[4].depends_on == ['Checks']
+	assert facts.unresolved.len == 2
+}

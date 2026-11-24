@@ -33,137 +33,139 @@ fn parse_jenkins(content string, source string) !PipelineFacts {
 	mut parallel_parent := ''
 	for line_index, raw_line in content.split_into_lines() {
 		line_number := line_index + 1
-		line := strip_comment(raw_line).trim_space()
-		if line == '' {
-			continue
-		}
-		if current_stage >= 0 && depth < stage_depth {
-			current_stage = -1
-			stage_depth = -1
-		}
-		if parallel_depth >= 0 && depth < parallel_depth {
-			parallel_depth = -1
-			parallel_parent = ''
-		}
-		if line.starts_with('parallel {') {
-			parallel_depth = depth + 1
-			parallel_parent = if current_stage >= 0 { facts.stages[current_stage].name } else { '' }
-		}
-		if stage_name := extract_call_argument(line, 'stage') {
-			mut dependencies := []string{}
-			if parallel_depth >= 0 && parallel_parent != '' {
-				dependencies << parallel_parent
-			} else if previous_stage != '' {
-				dependencies << previous_stage
+		for line in split_segments(strip_comment(raw_line)) {
+			if current_stage >= 0 && depth < stage_depth {
+				current_stage = -1
+				stage_depth = -1
 			}
-			facts.stages << StageFact{
-				name:            stage_name
-				line:            line_number
-				depends_on:      dependencies
-				parallel_parent: parallel_parent
+			if parallel_depth >= 0 && depth < parallel_depth {
+				parallel_depth = -1
+				parallel_parent = ''
 			}
-			current_stage = facts.stages.len - 1
-			stage_depth = depth + 1
-			if parallel_depth < 0 {
-				previous_stage = stage_name
-			}
-		}
-		stage_name := if current_stage >= 0 { facts.stages[current_stage].name } else { '' }
-		if line.starts_with('agent ') {
-			agent := normalize_value(line.all_after('agent '))
-			add_context_value(mut facts, current_stage, 'agent', agent)
-		}
-		if label := extract_step_argument(line, 'label') {
-			add_context_value(mut facts, current_stage, 'agent', 'label:${label}')
-		}
-		if image := extract_step_argument(line, 'image') {
-			add_context_value(mut facts, current_stage, 'image', image)
-		}
-		for credential in extract_call_arguments(line, 'credentials') {
-			facts.credentials << CredentialFact{
-				reference: credential
-				line:      line_number
-				stage:     stage_name
-			}
-		}
-		if credential := extract_named_argument(line, 'credentialsId') {
-			facts.credentials << CredentialFact{
-				reference: credential
-				line:      line_number
-				stage:     stage_name
-			}
-		}
-		for trigger in ['cron', 'pollSCM', 'upstream'] {
-			if value := extract_call_argument(line, trigger) {
-				add_unique(mut facts.triggers, '${trigger}:${value}')
-			}
-		}
-		for shell in ['sh', 'bat', 'powershell'] {
-			if command := extract_step_argument(line, shell) {
-				command_fact := CommandFact{
-					shell:   shell
-					command: command
-					line:    line_number
-					stage:   stage_name
-				}
-				if current_stage >= 0 {
-					facts.stages[current_stage].commands << command_fact
+			if line.starts_with('parallel {') {
+				parallel_depth = depth + 1
+				parallel_parent = if current_stage >= 0 {
+					facts.stages[current_stage].name
+				} else {
+					''
 				}
 			}
-		}
-		if value := extract_named_or_first_argument(line, 'archiveArtifacts', 'artifacts') {
-			facts.artifacts << ArtifactFact{
-				operation: 'archive'
-				value:     value
-				line:      line_number
-				stage:     stage_name
+			if stage_name := extract_call_argument(line, 'stage') {
+				mut dependencies := []string{}
+				if parallel_depth >= 0 && parallel_parent != '' {
+					dependencies << parallel_parent
+				} else if previous_stage != '' {
+					dependencies << previous_stage
+				}
+				facts.stages << StageFact{
+					name:            stage_name
+					line:            line_number
+					depends_on:      dependencies
+					parallel_parent: parallel_parent
+				}
+				current_stage = facts.stages.len - 1
+				stage_depth = depth + 1
+				if parallel_depth < 0 {
+					previous_stage = stage_name
+				}
 			}
-		}
-		if value := extract_named_or_first_argument(line, 'stash', 'name') {
-			facts.artifacts << ArtifactFact{
-				operation: 'stash'
-				value:     value
-				line:      line_number
-				stage:     stage_name
+			stage_name := if current_stage >= 0 { facts.stages[current_stage].name } else { '' }
+			if line.starts_with('agent ') {
+				agent := normalize_value(line.all_after('agent '))
+				add_context_value(mut facts, current_stage, 'agent', agent)
 			}
-		}
-		if value := extract_step_argument(line, 'unstash') {
-			facts.artifacts << ArtifactFact{
-				operation: 'unstash'
-				value:     value
-				line:      line_number
-				stage:     stage_name
+			if label := extract_step_argument(line, 'label') {
+				add_context_value(mut facts, current_stage, 'agent', 'label:${label}')
 			}
-		}
-		for endpoint in extract_urls(line) {
-			facts.endpoints << EndpointFact{
-				url:   endpoint
-				line:  line_number
-				stage: stage_name
+			if image := extract_step_argument(line, 'image') {
+				add_context_value(mut facts, current_stage, 'image', image)
 			}
-		}
-		for step in integration_steps {
-			if contains_step(line, step) {
-				add_unique(mut facts.integrations, step)
+			for credential in extract_call_arguments(line, 'credentials') {
+				facts.credentials << CredentialFact{
+					reference: credential
+					line:      line_number
+					stage:     stage_name
+				}
 			}
-		}
-		if line.starts_with('script {') || line.contains('evaluate(') || line.contains('load ')
-			|| line.contains('library ') {
-			facts.unresolved << UnresolvedFact{
-				reason: 'dynamic Groovy requires agent review'
-				line:   line_number
-				stage:  stage_name
-				source: line
+			if credential := extract_named_argument(line, 'credentialsId') {
+				facts.credentials << CredentialFact{
+					reference: credential
+					line:      line_number
+					stage:     stage_name
+				}
 			}
-		} else if line.contains(r'${') {
-			facts.unresolved << UnresolvedFact{
-				reason: 'interpolated value requires runtime resolution'
-				line:   line_number
-				stage:  stage_name
-				source: line
+			for trigger in ['cron', 'pollSCM', 'upstream'] {
+				if value := extract_call_argument(line, trigger) {
+					add_unique(mut facts.triggers, '${trigger}:${value}')
+				}
 			}
+			for shell in ['sh', 'bat', 'powershell'] {
+				if command := extract_step_argument(line, shell) {
+					command_fact := CommandFact{
+						shell:   shell
+						command: command
+						line:    line_number
+						stage:   stage_name
+					}
+					if current_stage >= 0 {
+						facts.stages[current_stage].commands << command_fact
+					}
+				}
+			}
+			if value := extract_named_or_first_argument(line, 'archiveArtifacts', 'artifacts') {
+				facts.artifacts << ArtifactFact{
+					operation: 'archive'
+					value:     value
+					line:      line_number
+					stage:     stage_name
+				}
+			}
+			if value := extract_named_or_first_argument(line, 'stash', 'name') {
+				facts.artifacts << ArtifactFact{
+					operation: 'stash'
+					value:     value
+					line:      line_number
+					stage:     stage_name
+				}
+			}
+			if value := extract_step_argument(line, 'unstash') {
+				facts.artifacts << ArtifactFact{
+					operation: 'unstash'
+					value:     value
+					line:      line_number
+					stage:     stage_name
+				}
+			}
+			for endpoint in extract_urls(line) {
+				facts.endpoints << EndpointFact{
+					url:   endpoint
+					line:  line_number
+					stage: stage_name
+				}
+			}
+			for step in integration_steps {
+				if contains_step(line, step) {
+					add_unique(mut facts.integrations, step)
+				}
+			}
+			if line.starts_with('script {') || line.contains('evaluate(') || line.contains('load ')
+				|| line.contains('library ') {
+				facts.unresolved << UnresolvedFact{
+					reason: 'dynamic Groovy requires agent review'
+					line:   line_number
+					stage:  stage_name
+					source: line
+				}
+			} else if line.contains(r'${') {
+				facts.unresolved << UnresolvedFact{
+					reason: 'interpolated value requires runtime resolution'
+					line:   line_number
+					stage:  stage_name
+					source: line
+				}
+			}
+			depth += brace_delta(line)
 		}
-		depth += brace_delta(line)
 	}
 	if facts.stages.len == 0 {
 		return error('no declarative Jenkins stages found')
@@ -314,6 +316,54 @@ fn strip_comment(line string) string {
 		}
 	}
 	return line
+}
+
+// split_segments breaks one-line blocks such as `steps { sh 'make' }` into
+// `steps {`, `sh 'make'`, and `}` so each statement is parsed on its own.
+fn split_segments(line string) []string {
+	mut segments := []string{}
+	mut start := 0
+	mut quote := u8(0)
+	mut escaped := false
+	bytes := line.bytes()
+	for index, character in bytes {
+		if escaped {
+			escaped = false
+			continue
+		}
+		if character == `\\` && quote != 0 {
+			escaped = true
+			continue
+		}
+		if character == `'` || character == `"` {
+			if quote == 0 {
+				quote = character
+			} else if quote == character {
+				quote = 0
+			}
+			continue
+		}
+		if quote != 0 {
+			continue
+		}
+		if character == `{` {
+			add_segment(mut segments, line[start..index + 1])
+			start = index + 1
+		} else if character == `}` {
+			add_segment(mut segments, line[start..index])
+			add_segment(mut segments, '}')
+			start = index + 1
+		}
+	}
+	add_segment(mut segments, line[start..])
+	return segments
+}
+
+fn add_segment(mut segments []string, value string) {
+	segment := value.trim_space()
+	if segment != '' {
+		segments << segment
+	}
 }
 
 fn brace_delta(line string) int {
