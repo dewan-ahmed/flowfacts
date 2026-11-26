@@ -51,7 +51,16 @@ The command prints one JSON document to standard output.
   steps in `unknown_steps`, with `name`, `line`, `stage`, and sanitized
   `source`. These usually come from a shared library and hide the real build
   logic. Calls inside `script { }` are left to the dynamic Groovy fact.
-- Dynamic Groovy and interpolated values that need review.
+- Declarative directives. Pipeline level: `parameters` (`name`, `type`,
+  `default`), `environment`, `tools`, `options`, and `post`. Stage level:
+  `environment`, `tools`, `options`, `when`, and `post`. Environment values are
+  literal text with URL query parameters removed; `credentials('id')` bindings
+  appear as `credential_reference` by ID only.
+- `post` blocks as `condition` plus `commands`. Commands inside `post` are not
+  listed with the stage's normal commands, so a failure-only cleanup step
+  stays failure-only.
+- Dynamic Groovy, `when { expression { ... } }`, and interpolated values that
+  need review.
 
 ## Harness pipeline facts
 

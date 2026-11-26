@@ -145,3 +145,47 @@ fn test_existing_fixtures_report_no_unknown_steps() {
 		assert facts.libraries.len == 0
 	}
 }
+
+fn test_extracts_declarative_directives() {
+	content := $embed_file('testdata/Jenkinsfile.directives').to_string()
+	facts := parse_jenkins(content, 'Jenkinsfile.directives') or {
+		assert false, err.msg()
+		return
+	}
+	assert facts.parameters.map('${it.@type}:${it.name}=${it.default}') == [
+		'string:TARGET_ENV=staging',
+		'booleanParam:RUN_E2E=true',
+		'choice:REGION=us-east-1',
+	]
+	assert facts.environment.len == 3
+	assert facts.environment[0].value == 'registry.example.com'
+	assert facts.environment[1].credential_reference == 'deploy-token'
+	assert facts.environment[1].value == ''
+	assert facts.environment[2].value == 'https://hooks.example.com/notify'
+	assert facts.tools.map('${it.@type}:${it.name}') == ['maven:maven-3.9', 'jdk:temurin-21']
+	assert facts.options.map(it.name) == ['timeout', 'retry']
+	build := facts.stages[0]
+	assert build.environment[0].name == 'PROFILE'
+	assert build.options[0].name == 'skipDefaultCheckout'
+	assert build.commands.map(it.command) == ['make build']
+	assert build.post.len == 1
+	assert build.post[0].condition == 'failure'
+	assert build.post[0].commands[0].command == 'make clean'
+	deploy := facts.stages[1]
+	assert deploy.when.map(it.condition) == ['branch', 'expression']
+	assert deploy.when[0].raw == "branch 'main'"
+	assert facts.unresolved.any(it.reason == 'when expression requires runtime evaluation'
+		&& it.stage == 'Deploy')
+	assert facts.post.map(it.condition) == ['always', 'cleanup']
+	assert facts.post[0].commands[0].command == './notify.sh'
+	assert facts.post[1].commands[0].command == 'rm -rf tmp'
+	assert !json.encode(facts).contains('secret')
+}
+
+fn test_semicolons_split_statements_outside_parentheses() {
+	assert split_segments("timeout(time: 30, unit: 'MINUTES'); retry(2)") == [
+		"timeout(time: 30, unit: 'MINUTES')",
+		'retry(2)',
+	]
+	assert split_segments("sh 'a; b'") == ["sh 'a; b'"]
+}

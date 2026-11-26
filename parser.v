@@ -33,9 +33,22 @@ fn parse_jenkins(content string, source string) !PipelineFacts {
 	mut parallel_parent := ''
 	mut steps_depth := -1
 	mut script_depth := -1
+	mut directive := DirectiveState{}
 	for line_index, raw_line in content.split_into_lines() {
 		line_number := line_index + 1
 		for line in split_segments(strip_comment(raw_line)) {
+			directive.leave_closed_blocks(depth)
+			if apply_directive(mut facts, mut directive, line, line_number, depth) {
+				depth += brace_delta(line)
+				continue
+			}
+			if section := directive_section(line) {
+				if directive.section == '' {
+					directive.section = section
+					directive.depth = depth + 1
+					directive.stage = current_stage
+				}
+			}
 			if current_stage >= 0 && depth < stage_depth {
 				current_stage = -1
 				stage_depth = -1
@@ -140,7 +153,9 @@ fn parse_jenkins(content string, source string) !PipelineFacts {
 						line:    line_number
 						stage:   stage_name
 					}
-					if current_stage >= 0 {
+					if directive.add_post_command(mut facts, command_fact) {
+						// Post commands only run on their condition.
+					} else if current_stage >= 0 {
 						facts.stages[current_stage].commands << command_fact
 					}
 				}
@@ -385,12 +400,14 @@ fn strip_comment(line string) string {
 }
 
 // split_segments breaks one-line blocks such as `steps { sh 'make' }` into
-// `steps {`, `sh 'make'`, and `}` so each statement is parsed on its own.
+// `steps {`, `sh 'make'`, and `}`, and splits `a(); b()` at top-level
+// semicolons, so each statement is parsed on its own.
 fn split_segments(line string) []string {
 	mut segments := []string{}
 	mut start := 0
 	mut quote := u8(0)
 	mut escaped := false
+	mut parens := 0
 	bytes := line.bytes()
 	for index, character in bytes {
 		if escaped {
@@ -412,7 +429,14 @@ fn split_segments(line string) []string {
 		if quote != 0 {
 			continue
 		}
-		if character == `{` {
+		if character == `(` {
+			parens++
+		} else if character == `)` {
+			parens--
+		} else if character == `;` && parens == 0 {
+			add_segment(mut segments, line[start..index])
+			start = index + 1
+		} else if character == `{` {
 			add_segment(mut segments, line[start..index + 1])
 			start = index + 1
 		} else if character == `}` {

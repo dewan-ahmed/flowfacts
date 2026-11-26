@@ -1,0 +1,38 @@
+pipeline {
+  agent any
+  parameters {
+    string(name: 'TARGET_ENV', defaultValue: 'staging', description: 'Where to deploy')
+    booleanParam(name: 'RUN_E2E', defaultValue: true)
+    choice(name: 'REGION', choices: ['us-east-1', 'eu-west-1'])
+  }
+  environment {
+    REGISTRY = 'registry.example.com'
+    DEPLOY_TOKEN = credentials('deploy-token')
+    HOOK = 'https://hooks.example.com/notify?key=secret'
+  }
+  tools { maven 'maven-3.9'; jdk 'temurin-21' }
+  options { timeout(time: 30, unit: 'MINUTES'); retry(2) }
+  stages {
+    stage('Build') {
+      environment { PROFILE = 'release' }
+      options { skipDefaultCheckout() }
+      steps { sh 'make build' }
+      post { failure { sh 'make clean' } }
+    }
+    stage('Deploy') {
+      when {
+        branch 'main'
+        expression {
+          return params.RUN_E2E
+        }
+      }
+      steps { sh './deploy.sh' }
+    }
+  }
+  post {
+    always { sh './notify.sh' }
+    cleanup {
+      sh 'rm -rf tmp'
+    }
+  }
+}
