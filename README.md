@@ -42,6 +42,15 @@ The command prints one JSON document to standard output.
 - Archived, stashed, and unstashed artifacts.
 - External HTTP endpoints with query parameters removed.
 - Common integration steps.
+- Shared library imports in `libraries`: `name`, `ref`, `line`, and `form`
+  (`annotation` for `@Library`, `step` for `library`, or `implicit` when
+  unknown steps appear without any declaration). For
+  `library identifier: ..., retriever: ...`, only the retriever type is kept.
+  Libraries are reported, not fetched or resolved.
+- Calls inside `steps { }` that are not built-in, shell, or known integration
+  steps in `unknown_steps`, with `name`, `line`, `stage`, and sanitized
+  `source`. These usually come from a shared library and hide the real build
+  logic. Calls inside `script { }` are left to the dynamic Groovy fact.
 - Dynamic Groovy and interpolated values that need review.
 
 ## Harness pipeline facts
