@@ -87,3 +87,61 @@ fn test_extracts_one_line_blocks() {
 	assert facts.stages[4].depends_on == ['Checks']
 	assert facts.unresolved.len == 2
 }
+
+fn test_extracts_shared_libraries_and_unknown_steps() {
+	content := $embed_file('testdata/Jenkinsfile.libraries').to_string()
+	facts := parse_jenkins(content, 'Jenkinsfile.libraries') or {
+		assert false, err.msg()
+		return
+	}
+	assert facts.libraries.len == 5
+	assert facts.libraries[0] == LibraryFact{
+		name: 'shared-pipeline'
+		ref:  'v2'
+		line: 1
+		form: 'annotation'
+	}
+	assert facts.libraries[1].name == 'security-steps'
+	assert facts.libraries[1].ref == '1.4.0'
+	assert facts.libraries[2].name == 'notify'
+	assert facts.libraries[2].ref == ''
+	assert facts.libraries[3].name == 'deploy-lib'
+	assert facts.libraries[3].form == 'step'
+	assert facts.libraries[4].name == 'infra-lib'
+	assert facts.libraries[4].ref == 'release/3'
+	assert facts.libraries[4].retriever == 'modernSCM'
+	names := facts.unknown_steps.map(it.name)
+	assert names == ['standardBuild', 'publishToNexus', 'deployToCluster']
+	assert facts.unknown_steps[0].stage == 'Build'
+	assert facts.unknown_steps[0].line == 11
+	assert facts.unknown_steps[2].stage == 'Deploy'
+	assert !facts.unknown_steps[2].source.contains('secret')
+	encoded := json.encode(facts)
+	assert !encoded.contains('token=abc')
+	assert facts.unresolved.any(it.source.starts_with('script {'))
+}
+
+fn test_unknown_steps_without_declaration_imply_a_library() {
+	content := "pipeline {\n  agent any\n  stages {\n    stage('Build') {\n      steps {\n        buildJavaService()\n      }\n    }\n  }\n}\n"
+	facts := parse_jenkins(content, 'Jenkinsfile') or {
+		assert false, err.msg()
+		return
+	}
+	assert facts.libraries.len == 1
+	assert facts.libraries[0].form == 'implicit'
+	assert facts.libraries[0].line == 6
+	assert facts.unknown_steps[0].name == 'buildJavaService'
+}
+
+fn test_existing_fixtures_report_no_unknown_steps() {
+	for content in [$embed_file('testdata/Jenkinsfile').to_string(),
+		$embed_file('testdata/Jenkinsfile.parallel').to_string(),
+		$embed_file('testdata/Jenkinsfile.compact').to_string()] {
+		facts := parse_jenkins(content, 'Jenkinsfile') or {
+			assert false, err.msg()
+			return
+		}
+		assert facts.unknown_steps.len == 0, facts.unknown_steps.str()
+		assert facts.libraries.len == 0
+	}
+}

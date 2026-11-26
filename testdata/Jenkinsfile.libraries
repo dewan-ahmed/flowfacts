@@ -1,0 +1,29 @@
+@Library('shared-pipeline@v2') _
+@Library(['security-steps@1.4.0', 'notify']) _
+library 'deploy-lib@main'
+library identifier: 'infra-lib@release/3', retriever: modernSCM([$class: 'GitSCMSource', remote: 'https://git.example.com/infra.git?token=abc'])
+
+pipeline {
+  agent any
+  stages {
+    stage('Build') {
+      steps {
+        standardBuild(lang: 'java')
+        sh 'make build'
+        withCredentials([string(credentialsId: 'nexus', variable: 'TOKEN')]) {
+          publishToNexus repo: 'releases'
+        }
+      }
+    }
+    stage('Deploy') {
+      steps {
+        script {
+          def target = pickTarget()
+          deployToCluster(target)
+        }
+        deployToCluster env: 'prod', url: 'https://deploy.example.com/hook?sig=secret'
+        echo 'done'
+      }
+    }
+  }
+}

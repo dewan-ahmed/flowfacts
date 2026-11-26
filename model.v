@@ -33,6 +33,21 @@ struct UnresolvedFact {
 	source string
 }
 
+struct LibraryFact {
+	name      string
+	ref       string
+	line      int
+	form      string
+	retriever string @[omitempty]
+}
+
+struct UnknownStepFact {
+	name   string
+	line   int
+	stage  string
+	source string
+}
+
 struct StageFact {
 	name            string
 	kind            string
@@ -50,13 +65,15 @@ struct PipelineFacts {
 	provider string
 	source   string
 mut:
-	stages       []StageFact
-	agents       []string
-	images       []string
-	triggers     []string
-	credentials  []CredentialFact
-	artifacts    []ArtifactFact
-	endpoints    []EndpointFact
-	integrations []string
-	unresolved   []UnresolvedFact
+	stages        []StageFact
+	agents        []string
+	images        []string
+	triggers      []string
+	credentials   []CredentialFact
+	artifacts     []ArtifactFact
+	endpoints     []EndpointFact
+	integrations  []string
+	unresolved    []UnresolvedFact
+	libraries     []LibraryFact
+	unknown_steps []UnknownStepFact
 }

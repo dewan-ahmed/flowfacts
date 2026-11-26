@@ -31,6 +31,8 @@ fn parse_jenkins(content string, source string) !PipelineFacts {
 	mut previous_stage := ''
 	mut parallel_depth := -1
 	mut parallel_parent := ''
+	mut steps_depth := -1
+	mut script_depth := -1
 	for line_index, raw_line in content.split_into_lines() {
 		line_number := line_index + 1
 		for line in split_segments(strip_comment(raw_line)) {
@@ -41,6 +43,37 @@ fn parse_jenkins(content string, source string) !PipelineFacts {
 			if parallel_depth >= 0 && depth < parallel_depth {
 				parallel_depth = -1
 				parallel_parent = ''
+			}
+			if steps_depth >= 0 && depth < steps_depth {
+				steps_depth = -1
+			}
+			if script_depth >= 0 && depth < script_depth {
+				script_depth = -1
+			}
+			for library in extract_libraries(line, line_number) {
+				facts.libraries << library
+			}
+			if steps_depth >= 0 && script_depth < 0 && line != '}' {
+				if name := step_name(line) {
+					if !is_known_step(name) {
+						facts.unknown_steps << UnknownStepFact{
+							name:   name
+							line:   line_number
+							stage:  if current_stage >= 0 {
+								facts.stages[current_stage].name
+							} else {
+								''
+							}
+							source: sanitize_urls(line)
+						}
+					}
+				}
+			}
+			if line.starts_with('steps {') {
+				steps_depth = depth + 1
+			}
+			if line.starts_with('script {') && script_depth < 0 {
+				script_depth = depth + 1
 			}
 			if line.starts_with('parallel {') {
 				parallel_depth = depth + 1
@@ -148,8 +181,7 @@ fn parse_jenkins(content string, source string) !PipelineFacts {
 					add_unique(mut facts.integrations, step)
 				}
 			}
-			if line.starts_with('script {') || line.contains('evaluate(') || line.contains('load ')
-				|| line.contains('library ') {
+			if line.starts_with('script {') || line.contains('evaluate(') || line.contains('load ') {
 				facts.unresolved << UnresolvedFact{
 					reason: 'dynamic Groovy requires agent review'
 					line:   line_number
@@ -169,6 +201,13 @@ fn parse_jenkins(content string, source string) !PipelineFacts {
 	}
 	if facts.stages.len == 0 {
 		return error('no declarative Jenkins stages found')
+	}
+	if facts.libraries.len == 0 && facts.unknown_steps.len > 0 {
+		// Global or folder libraries load without any declaration.
+		facts.libraries << LibraryFact{
+			line: facts.unknown_steps[0].line
+			form: 'implicit'
+		}
 	}
 	return facts
 }
