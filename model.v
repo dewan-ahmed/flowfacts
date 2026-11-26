@@ -48,6 +48,45 @@ struct UnknownStepFact {
 	source string
 }
 
+struct ParameterFact {
+	name    string
+	@type   string @[json: 'type']
+	default string
+	line    int
+}
+
+struct EnvironmentFact {
+	name                 string
+	value                string @[omitempty]
+	credential_reference string @[omitempty]
+	line                 int
+}
+
+struct ToolFact {
+	@type string @[json: 'type']
+	name  string
+	line  int
+}
+
+struct OptionFact {
+	name string
+	raw  string
+	line int
+}
+
+struct WhenFact {
+	condition string
+	raw       string
+	line      int
+}
+
+struct PostFact {
+	condition string
+	line      int
+mut:
+	commands []CommandFact
+}
+
 struct StageFact {
 	name            string
 	kind            string
@@ -55,9 +94,14 @@ struct StageFact {
 	depends_on      []string
 	parallel_parent string
 mut:
-	agents   []string
-	images   []string
-	commands []CommandFact
+	agents      []string
+	images      []string
+	commands    []CommandFact
+	environment []EnvironmentFact
+	tools       []ToolFact
+	options     []OptionFact
+	when        []WhenFact
+	post        []PostFact
 }
 
 struct PipelineFacts {
@@ -76,4 +120,9 @@ mut:
 	unresolved    []UnresolvedFact
 	libraries     []LibraryFact
 	unknown_steps []UnknownStepFact
+	parameters    []ParameterFact
+	environment   []EnvironmentFact
+	tools         []ToolFact
+	options       []OptionFact
+	post          []PostFact
 }
