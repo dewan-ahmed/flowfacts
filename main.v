@@ -8,6 +8,19 @@ fn main() {
 		print_help()
 		return
 	}
+	if os.args[1] == 'inventory' {
+		options := parse_inventory_args(os.args[2..]) or {
+			eprintln('flowfacts: ${err}')
+			exit(2)
+		}
+		all_ok := run_inventory(options, fn (line string) {
+			println(line)
+		})
+		if options.fail_on_error && !all_ok {
+			exit(1)
+		}
+		return
+	}
 	if os.args[1] != 'pipeline' {
 		eprintln('flowfacts: unknown command "${os.args[1]}"')
 		exit(2)
@@ -70,4 +83,6 @@ fn print_help() {
 	println('Usage:')
 	println('  flowfacts pipeline --provider jenkins --file Jenkinsfile')
 	println('  flowfacts pipeline --provider harness --file pipeline.yaml')
+	println('  flowfacts inventory --provider jenkins --dir ./exports [--include GLOB] [--exclude GLOB]')
+	println('                      [--format ndjson|json] [--fail-on-error]')
 }

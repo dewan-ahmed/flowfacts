@@ -1,0 +1,36 @@
+pipeline {
+  agent { label 'linux-large' }
+  triggers { cron('H 4 * * 1-5') }
+  environment {
+    DEPLOY_TOKEN = credentials('deploy-token')
+  }
+  stages {
+    stage('Build') {
+      agent { docker { image 'golang:1.23' } }
+      steps {
+        sh 'make build'
+        archiveArtifacts artifacts: 'dist/**'
+        stash name: 'compiled', includes: 'dist/**'
+      }
+    }
+    stage('Checks') {
+      parallel {
+        stage('Unit') {
+          steps { sh 'make test' }
+        }
+        stage('Lint') {
+          steps { sh 'make lint' }
+        }
+      }
+    }
+    stage('Publish') {
+      steps {
+        unstash 'compiled'
+        sh "curl https://artifacts.example.com/upload?token=${UPLOAD_TOKEN}"
+        script {
+          runDynamicChecks()
+        }
+      }
+    }
+  }
+}

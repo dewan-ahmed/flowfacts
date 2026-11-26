@@ -66,6 +66,37 @@ pipeline YAML, so `triggers` is empty for this provider.
 Unresolved entries are deliberate. They tell an agent where deterministic
 extraction stops and human or model judgment is required.
 
+## Inventory
+
+```sh
+flowfacts inventory --provider jenkins --dir ./exports --exclude 'vendor/**'
+```
+
+`inventory` scans a directory tree and parses every matching pipeline in one
+run. Default includes are `Jenkinsfile`, `Jenkinsfile.*`, and `*.jenkinsfile`
+for Jenkins, and `*.yaml` and `*.yml` for Harness. `--include` and
+`--exclude` are repeatable globs: `*` stays within one path segment, `**`
+crosses segments, and a pattern without `/` matches the file name. Symlinks
+are never followed, so an untrusted export cannot point the scan outside
+`--dir`.
+
+The default `--format ndjson` prints one record per file, sorted by path, as
+each file is parsed:
+
+```json
+{"type":"file","path":"services/api/Jenkinsfile","status":"ok","facts":{}}
+{"type":"file","path":"empty/Jenkinsfile","status":"no_stages","error":"no declarative Jenkins stages found"}
+```
+
+`facts` is the same document `pipeline` prints. `status` is `ok`,
+`no_stages`, `read_error`, or `parse_error`. A final `summary` record has
+per-status counts, total stages, the number of files with unresolved facts,
+and sorted distinct agents, images, credential IDs, and integrations.
+`--format json` prints one `{"files": [...], "summary": {...}}` document.
+
+The scan exits `0` even when some files fail, `2` for invalid options, and
+`1` with `--fail-on-error` when any file is not `ok`.
+
 ## Exit codes
 
 | Code | Meaning |
